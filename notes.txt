@@ -1,4 +1,4 @@
-Regions to test: 
+Regions to map: 
     Rogue Reef, Oregon 
     Neah bay, Washington
     San Miguel Island
