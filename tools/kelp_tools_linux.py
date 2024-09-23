@@ -87,7 +87,7 @@ def filter_and_sort_files(img_path, granule):
         for band in sensor_bands:
             if band in filename:
                 return sensor_bands.index(band)
-        return len(sensor_bands)  # Place files with no band information at the end
+        return len(sensor_bands)  # Put files with no band information at the end
     
     sorted_files = sorted(final_files, key=sort_key)
     
@@ -164,11 +164,13 @@ def reproject_dem_to_hls(hls_path, dem_path='/mnt/c/Users/attic/HLS_Kelp/imagery
             else:
                 return False
 
-def generate_land_mask(reprojected_dem, land_dilation=3, show_image=False, as_numpy=True):
+def generate_land_mask(reprojected_dem, land_dilation=3, show_image=False, as_numpy=True, mask_ocean=True):
     if reprojected_dem.any():
         struct = cp.ones((land_dilation, land_dilation))
         reprojected_dem_gpu = cp.asarray(reprojected_dem)
         land_mask = binary_dilation(reprojected_dem_gpu > 0, structure=struct)
+        if(mask_ocean == True):
+            land_mask = cp.where(reprojected_dem_gpu < -100, True, land_mask)
         if as_numpy:
             land_mask = cp.asnumpy(land_mask)
         if show_image:
