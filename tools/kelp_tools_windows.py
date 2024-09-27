@@ -6,6 +6,7 @@ import os
 import re
 #from scipy.ndimage import binary_dilation, uniform_filter
 from rasterio.errors import RasterioIOError
+from pyproj import Transformer
 from skimage import io
 #from cuml.model_selection import train_test_split
 from scipy.stats import randint
@@ -349,3 +350,22 @@ def get_metadata(path, files=None):
             keys = next(csv_reader)  
             values = next(csv_reader) 
         return dict(zip(keys, values))
+def get_lat_lon(extent, transform, crs):
+    transformer = Transformer.from_crs(crs, 'EPSG:4326', always_xy=True)
+    # Transform the extent coordinates
+    lon_min, lat_min = transformer.transform(extent[0], extent[2])
+    lon_max, lat_max = transformer.transform(extent[1], extent[3])
+    # Define the new extent in lat/lon
+    extent_latlon = [lon_min, lon_max, lat_min, lat_max]
+    return extent_latlon
+
+def compile_dem(dem_path, hls_path):
+    files = os.listdir(dem_path)
+    dem_files = [file for file in files if '_dem']
+    dem = None
+    for file in dem_files:
+        if(dem is None):
+            dem = (reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)))
+        else:
+            dem = np.where(dem == 0, reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)), dem)
+    return dem 

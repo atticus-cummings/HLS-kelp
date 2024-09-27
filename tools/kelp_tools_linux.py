@@ -184,10 +184,22 @@ def generate_land_mask(reprojected_dem, land_dilation=3, show_image=False, as_nu
     else:
         print("Something failed, you better go check...")
         sys.exit()
+def compile_dem(dem_path, hls_path):
+    files = os.listdir(dem_path)
+    dem_files = [file for file in files if '_dem']
+    dem = None
+    for file in dem_files:
+        if(dem is None):
+            dem = (reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)))
+        else:
+            dem = np.where(dem == 0, reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)), dem)
+    return dem 
 
 def create_land_mask(hls_path, dem_path='/mnt/c/Users/attic/HLS_Kelp/imagery/Socal_DEM.tiff', show_image=False, as_numpy=True):
-    reprojected_dem = reproject_dem_to_hls(hls_path, dem_path)
+    reprojected_dem = compile_dem(hls_path, dem_path)
     return generate_land_mask(reprojected_dem, show_image=show_image, as_numpy=as_numpy)
+
+
 
 def create_mesma_mask(
     classified_img,
