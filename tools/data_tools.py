@@ -11,10 +11,34 @@ from IPython.display import clear_output
 import matplotlib.dates as mdates
 import re
 from rasterio.plot import show
+import requests
+from PIL import Image
+from io import BytesIO
+import csv
 
 
 
-
+def view_img(path):
+#granule = 'HLS.L30.T11SKU.2023040T183427.v2.0'
+    try:
+        files = os.listdir(path)
+    except: 
+        print("Invalid Path?")
+        return
+    metadata_file = [f for f in files if re.search(r'metadata\.csv$', f)]
+    if metadata_file :
+        with open(os.path.join(path, metadata_file[0]), mode='r') as file:
+            csv_reader = csv.reader(file)
+            keys = next(csv_reader)  
+            values = next(csv_reader) 
+        metadata = dict(zip(keys, values))
+    print(metadata['SENSING_TIME'])
+    urls = metadata['data_vis_url']
+    img_urls = urls.strip("[]").replace("'", "").split(", ")
+    print(img_urls)
+    response = requests.get(img_urls[0])
+    img = Image.open(BytesIO(response.content))
+    img.show()
 
 
 def get_stats(array):
@@ -89,8 +113,11 @@ def load_processed_img(path, file, bands=None, just_data=False, geo_info=False, 
     return_vals = [data]
     if date_return:
         date = metadata['TIMESTAMP']
+        date = date[:24]
+        print(date)
         date = date.rstrip('Z')
         date = date[:26]
+        print(date)
         date_obj = datetime.strptime(date, "%Y-%m-%dT%H:%M:%S.%f")
         day_num = date_obj.timestamp() / 86400 
         return_vals.append(day_num)
@@ -606,13 +633,15 @@ def get_granule(filename):
         print("invalid file name")
         return None
     
-def get_image_pixel_sums(path, file, crop=False, bands=[5,6], kelp_map=None , cloud_correction=False ):
-    f_data = load_processed_img(path,file, bands=bands, geo_info=False,cloud_coverage=True,crop=crop, date_return=True)
+def get_image_pixel_sums(path, file, crop=False, bands=[5,6], kelp_map=None , cloud_correction=False, tide_current=False ):
+    f_data = load_processed_img(path,file, bands=bands, geo_info=False,cloud_coverage=True, tide_current=tide_current, crop=crop, date_return=True)
     if f_data is None:
         return None
     #print(f_data)
-    f_img, day_num, date, f_tide, f_current, f_clouds = f_data
-    
+    if tide_current:
+        f_img, day_num, date, f_tide, f_current, f_clouds = f_data
+    else: 
+        f_img, day_num, date, f_clouds = f_data
     # Process First Image
     f_mesma = np.array(f_img[1])
     f_mesma = np.where(f_mesma < 5, 0 , f_mesma)
@@ -632,8 +661,10 @@ def get_image_pixel_sums(path, file, crop=False, bands=[5,6], kelp_map=None , cl
     f_sum = np.sum(f_mesma)
     if cloud_correction and cloud_correction_factor is not None:
         f_sum = f_sum * cloud_correction_factor
-        
-    data = [file, day_num, date, f_sum, f_kelp_pixels,f_current,f_tide,f_clouds, cloud_correction_factor]
+    if tide_current:    
+        data = [file, day_num, date, f_sum, f_kelp_pixels,f_current,f_tide,f_clouds, cloud_correction_factor]
+    else:
+        data = [file, day_num, date, f_sum, f_kelp_pixels,f_clouds, cloud_correction_factor]
     return data
 
 def extract_date(filename):
@@ -650,31 +681,36 @@ def sort_filenames_by_date(filenames):
     sorted_filenames = [filename for _, filename in date_filename_pairs]
     return sorted_filenames
 
-def sum_kelp(path, filenames, version=0, save=True, binary_threshold=10):
+def generate_binary_kelp_map(tile, tile_path=r'C:\Users\attic\HLS Kelp Detection\processed imagery\tiles', version=0, save=True, binary_threshold=10, show_image=False):
+    path= os.path.join(tile_path,tile)
+    filenames = set(os.listdir(path))
+    filenames.discard('kelp_map.tif')
+    filenames = list(filenames)
     length = len(filenames)
     image = []
-    data, crs, transform = load_processed_img(path,file,bands[1], geo_info=True,cloud_coverage=False, tide_current=False)
+    data, crs, transform = load_processed_img(path,filenames[2],bands=[1], geo_info=True,cloud_coverage=False, tide_current=False)
     for i,file in enumerate(filenames):
-        data = load_processed_img(path,file,bands=[5],just_data=True, cloud_coverage=False)
+        data = load_processed_img(path,file,bands=[1],just_data=True, cloud_coverage=False)
         if data is None:
             continue
         kelp = np.where(data==0, 1,0)
         image.append(kelp)
  
         clear_output()
-        print(f'{i}/{length}')    
+        print(f'{i+1}/{length}')    
 
     image = np.array(image)  # Convert list to 3D NumPy array
     summed_image = np.sum(image, axis=0)
 
     kelp_map = np.where(summed_image > binary_threshold, 1,0)
     print(kelp_map.shape)
-    plt.figure(figsize=(25,25))
-    plt.imshow(kelp_map[0,2500:3600,200:1750])
-    plt.show()
-    plt.figure(figsize=(25,25))
-    plt.imshow(summed_image[0,2500:3600,200:1750])
-    plt.show()
+    if show_image:
+        plt.figure(figsize=(25,25))
+        plt.imshow(kelp_map[0])
+        plt.show()
+        plt.figure(figsize=(25,25))
+        plt.imshow(summed_image[0])
+        plt.show()
     
     files = os.listdir(path)
     for file in files:
@@ -683,9 +719,9 @@ def sum_kelp(path, filenames, version=0, save=True, binary_threshold=10):
             img_file = file
             break
     print(img_file)
-    packet = load_processed_img(path,img_file,bands=[1],geo_info=True, cloud_coverage=False)
+    packet = load_processed_img(path,img_file,bands=[1],geo_info=True, tide_current=False, cloud_coverage=False)
 
-    data, tide, current, transform, crs = packet
+    data, transform, crs = packet
     bands,width,height = data.shape
     if save:
         data_type = rasterio.uint8
@@ -701,13 +737,14 @@ def sum_kelp(path, filenames, version=0, save=True, binary_threshold=10):
             'tags': { 'VERSION':version }
         }
         try:
-            new_path = os.path.join(rf'H:\HLS_data\imagery\Isla_vista_kelp\processed_v{version}','kelp_map.tif')
+            new_path = os.path.join(path,'kelp_map.tif')
             with rasterio.open(new_path, 'w', **profile) as dst:
                 dst.write((kelp_map[0]).astype(data_type), 1)
                 dst.write((summed_image[0]).astype(data_type), 2)
             print(f'saved to: {new_path}')
         except RasterioIOError as e:
             print(f"Error reading file {file}: {e}")
+    return kelp_map[0]
 
 
 def convert_df_types(df, col_types=None):

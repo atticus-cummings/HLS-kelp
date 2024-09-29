@@ -162,6 +162,19 @@ def reproject_dem_to_hls(hls_path, dem_path=r'C:\Users\attic\HLS_Kelp\imagery\So
                 return reprojected_dem
             else:
                 return False
+            
+def compile_dem(dem_path, hls_path):
+    files = os.listdir(dem_path)
+    dem_files = [file for file in files if '_dem']
+    dem = None
+    for file in dem_files:
+        if(dem is None):
+            dem = (reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)))
+        else:
+            dem = np.where(dem == 0, reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)), dem)
+
+    # end main
+    return dem 
 
 def generate_land_mask(reprojected_dem, land_dilation=7, show_image=False, as_numpy=True):
     if reprojected_dem.any():
@@ -182,8 +195,8 @@ def generate_land_mask(reprojected_dem, land_dilation=7, show_image=False, as_nu
         print("Something failed, you better go check...")
         sys.exit()
 
-def create_land_mask(hls_path, dem_path=r'C:\Users\attic\HLS_Kelp\imagery\Socal_DEM.tiff', show_image=False, as_numpy=True):
-    reprojected_dem = reproject_dem_to_hls(hls_path, dem_path)
+def create_land_mask(hls_path, dem_path='/mnt/c/Users/attic/HLS_Kelp/imagery/Socal_DEM.tiff', show_image=False, as_numpy=True):
+    reprojected_dem = compile_dem(dem_path,hls_path)
     return generate_land_mask(reprojected_dem, show_image=show_image, as_numpy=as_numpy)
 
 def create_mesma_mask(
@@ -359,13 +372,3 @@ def get_lat_lon(extent, transform, crs):
     extent_latlon = [lon_min, lon_max, lat_min, lat_max]
     return extent_latlon
 
-def compile_dem(dem_path, hls_path):
-    files = os.listdir(dem_path)
-    dem_files = [file for file in files if '_dem']
-    dem = None
-    for file in dem_files:
-        if(dem is None):
-            dem = (reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)))
-        else:
-            dem = np.where(dem == 0, reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)), dem)
-    return dem 

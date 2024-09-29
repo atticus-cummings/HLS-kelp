@@ -114,7 +114,7 @@ def download_dem (tile_id, dem_path):
     for result in dem_results:
         earthaccess.download(result, local_path=dem_path)
 
-def download_hls_data(temporal=None,tiles=None,bbox=None,data_folder=r'C:\Users\attic\HLS Kelp Detection\imagery\tiles', num_download=500, num_load= -1, cloud_coverage=50):
+def download_hls_data(temporal=None,tiles=None,bbox=None,data_folder=r'C:\Users\attic\HLS Kelp Detection\imagery\tiles', num_download=500, load_num= -1, cloud_coverage=50, dem_download=False):
     # for reference, temporal input should be in this form: ("2018-12-25T00:00:00", "2019-01-01T00:00:00")
     #
     bbox_array = []
@@ -149,11 +149,14 @@ def download_hls_data(temporal=None,tiles=None,bbox=None,data_folder=r'C:\Users\
             if(int(metadata['CLOUD_COVERAGE']) > cloud_coverage): #Reject granules with large cloud cover, for now
                 continue
             #time = metadata['SENSING_TIME']
-            tile_folder = metadata['MGRS_TILE_ID']
-            if(tiles is not None and tile_folder not in tiles):
+            tile_id = metadata['MGRS_TILE_ID']
+            if(tiles is not None and tile_id not in tiles):
                 continue
+            
+            if dem_download and not os.path.isdir(os.path.join(data_folder,tile_id,'dem')):
+                download_dem(tile_id,os.path.join(data_folder,tile_id,'dem'))
             ## ======= Create file directory, if needed  ======= ##
-            tile_path = os.path.join(data_folder,tile_folder)
+            tile_path = os.path.join(data_folder,tile_id)
             if not os.path.isdir(tile_path):
                 os.mkdir(tile_path)
             folder_name = (f'{name}')
@@ -167,7 +170,7 @@ def download_hls_data(temporal=None,tiles=None,bbox=None,data_folder=r'C:\Users\
 
             ## ======= download granule ======= ##
             with open(os.devnull, 'w') as f, redirect_stdout(f): #The print out of this is kind of annoying, this redirects *most* of it 
-                downloadPath = earthaccess.download(links, local_path=file_path, threads=2)
+                downloadPath = earthaccess.download(links, local_path=file_path, threads=16)
             downloaded = downloaded + 1
             print(f'{name}')
             if downloaded > num_download:

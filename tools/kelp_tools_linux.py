@@ -14,7 +14,7 @@ from cuml.ensemble import RandomForestClassifier as cuRF
 from scipy.stats import randint
 from cupyx.scipy.ndimage import binary_dilation, convolve
 import time
-
+import cudf
 import sys
 import pickle
 import csv
@@ -100,7 +100,7 @@ def valid_granule(img_files, sensor_bands, files, item):
         return False
     return True
    
-def create_qa_mask(land_mask, img_path):
+def create_qa_mask(land_mask, img_path, as_numpy=False):
     files = os.listdir(img_path)
     f_mask = [f for f in files if re.search(r'Fmask\.tif$', f)]
     if not f_mask:
@@ -126,11 +126,20 @@ def create_qa_mask(land_mask, img_path):
     #may not be necessary to mask out the cloud-adjacent pixels 
 
 ##========== Determine percentage of ocean covered by clouds ==========##
-    cloud_land_mask = cp.asarray(cloud_mask | land_mask)
-    cloud_but_not_land_mask = cp.asarray(cloud_mask & ~land_mask)
-    num_pixels_cloud_not_land = cp.count_nonzero(cloud_but_not_land_mask)
-    num_pixels_not_land = np.count_nonzero(~land_mask)
-    percent_cloud_covered = num_pixels_cloud_not_land/num_pixels_not_land
+    if(as_numpy):
+        if isinstance(land_mask, cp.ndarray):
+            land_mask = cp.asnumpy(land_mask)
+        cloud_land_mask = np.asarray(cloud_mask | land_mask)
+        cloud_but_not_land_mask = np.asarray(cloud_mask & ~land_mask)
+        num_pixels_cloud_not_land = np.count_nonzero(cloud_but_not_land_mask)
+        num_pixels_not_land = np.count_nonzero(~land_mask)
+        percent_cloud_covered = num_pixels_cloud_not_land/num_pixels_not_land
+    else:
+        cloud_land_mask = cp.asarray(cloud_mask | land_mask)
+        cloud_but_not_land_mask = cp.asarray(cloud_mask & ~land_mask)
+        num_pixels_cloud_not_land = cp.count_nonzero(cloud_but_not_land_mask)
+        num_pixels_not_land = np.count_nonzero(~land_mask)
+        percent_cloud_covered = num_pixels_cloud_not_land/num_pixels_not_land
     # print(f'{granule} Percent cloud covered: {percent_cloud_covered}')
     return cloud_land_mask, cloud_but_not_land_mask, percent_cloud_covered
 
@@ -145,10 +154,23 @@ def calculate_local_variance(image_gpu, window_size):
     
     return local_variance_gpu
 
-def reproject_dem_to_hls(hls_path, dem_path='/mnt/c/Users/attic/HLS_Kelp/imagery/Socal_DEM.tiff'):
+
+
+
+
+
+
+
+
+
+def reproject_dem_to_hls(hls_path, dem_path=r'C:\Users\attic\HLS_Kelp\imagery\Socal_DEM.tiff'):
     with rasterio.open(hls_path) as dst:
         hls = dst.read()
         dem = rasterio.open(dem_path)
+        # plt.figure()
+        # dem_plot = dem.read()
+        # plt.imshow(dem_plot[0])
+        # plt.show()
         if dem.crs != dst.crs:
             reprojected_dem = np.zeros((hls.shape[1], hls.shape[2]), dtype=hls.dtype)
             reproject(
@@ -162,15 +184,25 @@ def reproject_dem_to_hls(hls_path, dem_path='/mnt/c/Users/attic/HLS_Kelp/imagery
             if reprojected_dem.any():
                 return reprojected_dem
             else:
-                return False
+                return None
+            
+def compile_dem(dem_path, hls_path):
+    files = os.listdir(dem_path)
+    dem_files = [file for file in files if '_dem' in file]
+    dem = None
+    for file in dem_files:
+        if(dem is None):
+            dem = (reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)))
+        else:
+            dem = np.where(dem == 0, reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)), dem)
+    # end main
+    return dem 
 
-def generate_land_mask(reprojected_dem, land_dilation=3, show_image=False, as_numpy=True, mask_ocean=True):
+def generate_land_mask(reprojected_dem, land_dilation=7, show_image=False, as_numpy=True):
     if reprojected_dem.any():
         struct = cp.ones((land_dilation, land_dilation))
         reprojected_dem_gpu = cp.asarray(reprojected_dem)
         land_mask = binary_dilation(reprojected_dem_gpu > 0, structure=struct)
-        if(mask_ocean == True):
-            land_mask = cp.where(reprojected_dem_gpu < -100, True, land_mask)
         if as_numpy:
             land_mask = cp.asnumpy(land_mask)
         if show_image:
@@ -178,25 +210,15 @@ def generate_land_mask(reprojected_dem, land_dilation=3, show_image=False, as_nu
             if as_numpy:
                 plt.imshow(land_mask, cmap='gray')
             else:
-                plt.imshow(cp.asnumpy(land_mask))
+                plt.imshow(np.array(land_mask))
             plt.show()
         return land_mask
     else:
         print("Something failed, you better go check...")
         sys.exit()
-def compile_dem(dem_path, hls_path):
-    files = os.listdir(dem_path)
-    dem_files = [file for file in files if '_dem']
-    dem = None
-    for file in dem_files:
-        if(dem is None):
-            dem = (reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)))
-        else:
-            dem = np.where(dem == 0, reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)), dem)
-    return dem 
 
 def create_land_mask(hls_path, dem_path='/mnt/c/Users/attic/HLS_Kelp/imagery/Socal_DEM.tiff', show_image=False, as_numpy=True):
-    reprojected_dem = compile_dem(hls_path, dem_path)
+    reprojected_dem = compile_dem(dem_path,hls_path)
     return generate_land_mask(reprojected_dem, show_image=show_image, as_numpy=as_numpy)
 
 
@@ -266,7 +288,7 @@ def create_mesma_mask(
     return kelp_mask, ocean_mask
 
 
-def normalize_img(img, flatten=True):
+def normalize_img(img, flatten=True, as_numpy=False):
     img_2D = img.reshape(img.shape[0], -1).T
     img_sum = img_2D.sum(axis=1)
     #print(img_sum.shape)
@@ -275,12 +297,20 @@ def normalize_img(img, flatten=True):
     #mask = cp.broadcast_to(mask, img_2D.shape)
     #print(mask.shape)
     #print(type(mask))
-    img_2D_nor = cp.divide(img_2D, img_sum[:, None] + epsilon)#, where=mask)
-    img_2D_nor = (img_2D_nor * 255).astype(cp.uint8)
-    img_2D_nor = img_2D_nor.T
-    if flatten:
-        img_data= img_2D_nor.reshape(img_2D_nor.shape[0], -1).T
-        return img_data
+    if(as_numpy):
+        img_2D_nor = np.divide(img_2D, img_sum[:, None] + epsilon)#, where=mask)
+        img_2D_nor = (img_2D_nor * 255).astype(np.uint8)
+        if flatten:
+            img_2D_nor = img_2D_nor.T
+            img_2D_nor= img_2D_nor.reshape(img.shape[0],img.shape[1],img.shape[2])
+            img_2D_nor= np.moveaxis(img_2D_nor, 0, -1)
+    else:
+        img_2D_nor = cp.divide(img_2D, img_sum[:, None] + epsilon)#, where=mask)
+        img_2D_nor = (img_2D_nor * 255).astype(cp.uint8)
+        if flatten:
+            img_2D_nor = img_2D_nor.T
+            img_2D_nor= img_2D_nor.reshape(img.shape[0],img.shape[1],img.shape[2])
+            img_2D_nor= cp.moveaxis(img_2D_nor, 0, -1)
     return img_2D_nor
    
 
@@ -298,7 +328,7 @@ def select_ocean_endmembers(ocean_mask=None, ocean_data=None, print_average=Fals
     i = 0
     while len(ocean_EM_stack) < n and i < 3000:
         index = random.randint(0,len(filtered_ocean[0])-1)
-        if valid_endmember(filtered_ocean[:,index]) or not check_EM:
+        if not check_EM or valid_endmember(filtered_ocean[:,index]):
             ocean_EM_stack.append(filtered_ocean[:,index])
         i = i+1
     if(len(ocean_EM_stack) < 30):
@@ -399,7 +429,30 @@ def get_metadata(path, files=None):
             keys = next(csv_reader)  
             values = next(csv_reader) 
         return dict(zip(keys, values))
+    return None
+
+def reduce_cudf_zero(df):
+
+    arr = df.to_cupy()
+    print(arr.shape)
+    non_zero_mask = cp.any(arr != 0, axis=0)
     
+    reduced_df = df[non_zero_mask]
+    original_indices = cp.arange(arr.shape[0])
+    filtered_indices = original_indices[non_zero_mask]
+    
+    return reduced_df, filtered_indices, original_indices 
+def revert_cudf_zero(reduced_df, filtered_indices, original_indices):
+    # Create a full-sized column initialized with zeros or NaNs
+    # if reduced_df.ndim == 1:  # Handle 1D case (single column)
+    full_df = cudf.Series(cp.full(len(original_indices), cp.nan))
+    # else:  # Handle 2D case (multiple columns)
+    #     full_df = cudf.DataFrame(cp.full((len(original_indices), reduced_df.shape[1]), cp.nan))
+    # Insert the reduced data into the appropriate positions
+    full_df.iloc[filtered_indices] = reduced_df
+    
+    return full_df
+
 
 def reduce_matrix_nan(array, zeros=False):
     if zeros:
