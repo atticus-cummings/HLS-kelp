@@ -41,6 +41,9 @@ def view_img(path):
     img.show()
 
 
+
+
+
 def get_stats(array):
     return np.mean(array), np.std(array), np.percentile(array, [25, 75])
 

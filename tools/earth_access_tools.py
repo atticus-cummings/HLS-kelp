@@ -147,10 +147,12 @@ def download_hls_data(temporal=None,tiles=None,bbox=None,data_folder=r'C:\Users\
             #print(attributes['MGRS_TILE_ID'])
 
             if(int(metadata['CLOUD_COVERAGE']) > cloud_coverage): #Reject granules with large cloud cover, for now
+                #print(f"Cloud Coverage: {metadata['CLOUD_COVERAGE']}, skipping ")
                 continue
             #time = metadata['SENSING_TIME']
             tile_id = metadata['MGRS_TILE_ID']
             if(tiles is not None and tile_id not in tiles):
+                #print(f'invalid tile_id: {tile_id}')
                 continue
             
             if dem_download and not os.path.isdir(os.path.join(data_folder,tile_id,'dem')):

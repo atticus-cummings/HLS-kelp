@@ -195,12 +195,16 @@ def compile_dem(dem_path, hls_path):
             dem = (reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)))
         else:
             dem = np.where(dem == 0, reproject_dem_to_hls(hls_path=hls_path, dem_path=os.path.join(dem_path,file)), dem)
-    # end main
+    dem = dem.astype(np.float64)
+    dem = np.where(np.isnan(dem), 0, dem)
+
     return dem 
 
 def generate_land_mask(reprojected_dem, land_dilation=7, show_image=False, as_numpy=True):
     if reprojected_dem.any():
         struct = cp.ones((land_dilation, land_dilation))
+ #       if not isinstance(reprojected_dem, cp.ndarray):
+        print()
         reprojected_dem_gpu = cp.asarray(reprojected_dem)
         land_mask = binary_dilation(reprojected_dem_gpu > 0, structure=struct)
         if as_numpy:
@@ -210,7 +214,7 @@ def generate_land_mask(reprojected_dem, land_dilation=7, show_image=False, as_nu
             if as_numpy:
                 plt.imshow(land_mask, cmap='gray')
             else:
-                plt.imshow(np.array(land_mask))
+                plt.imshow(cp.asnumpy(land_mask))
             plt.show()
         return land_mask
     else:
@@ -313,6 +317,20 @@ def normalize_img(img, flatten=True, as_numpy=False):
             img_2D_nor= cp.moveaxis(img_2D_nor, 0, -1)
     return img_2D_nor
    
+def reduce_cudf_zero(df):
+    arr = df.to_cupy()
+    non_zero_mask = cp.any(arr != 0, axis=1)
+    reduced_df = df[non_zero_mask]
+    original_indices = cp.arange(arr.shape[0])
+    filtered_indices = original_indices[non_zero_mask]
+    return reduced_df, filtered_indices, original_indices
+
+def revert_cudf_zero(reduced_df, filtered_indices, original_indices):
+    full_df = cudf.Series(cp.full(len(original_indices), 3))
+    full_df.iloc[filtered_indices] = reduced_df
+    
+    return full_df
+
 
 def select_ocean_endmembers(ocean_mask=None, ocean_data=None, print_average=False, n=30, min_pixels=1000, check_EM=False):
     ocean_EM_n = 0
@@ -431,27 +449,7 @@ def get_metadata(path, files=None):
         return dict(zip(keys, values))
     return None
 
-def reduce_cudf_zero(df):
 
-    arr = df.to_cupy()
-    print(arr.shape)
-    non_zero_mask = cp.any(arr != 0, axis=0)
-    
-    reduced_df = df[non_zero_mask]
-    original_indices = cp.arange(arr.shape[0])
-    filtered_indices = original_indices[non_zero_mask]
-    
-    return reduced_df, filtered_indices, original_indices 
-def revert_cudf_zero(reduced_df, filtered_indices, original_indices):
-    # Create a full-sized column initialized with zeros or NaNs
-    # if reduced_df.ndim == 1:  # Handle 1D case (single column)
-    full_df = cudf.Series(cp.full(len(original_indices), cp.nan))
-    # else:  # Handle 2D case (multiple columns)
-    #     full_df = cudf.DataFrame(cp.full((len(original_indices), reduced_df.shape[1]), cp.nan))
-    # Insert the reduced data into the appropriate positions
-    full_df.iloc[filtered_indices] = reduced_df
-    
-    return full_df
 
 
 def reduce_matrix_nan(array, zeros=False):
