@@ -332,7 +332,7 @@ def revert_cudf_zero(reduced_df, filtered_indices, original_indices):
     return full_df
 
 
-def select_ocean_endmembers(ocean_mask=None, ocean_data=None, print_average=False, n=30, min_pixels=1000, check_EM=False):
+def select_ocean_endmembers(ocean_mask=None, ocean_data=None, print_average=False, n=30, min_pixels=200, check_EM=False):
     ocean_EM_n = 0
     if ocean_mask is not None:
         ocean_data = ocean_mask.reshape(ocean_mask.shape[0], -1)
@@ -344,11 +344,13 @@ def select_ocean_endmembers(ocean_mask=None, ocean_data=None, print_average=Fals
         print("Too few valid ocean end-members")
         return None
     i = 0
-    while len(ocean_EM_stack) < n and i < 3000:
-        index = random.randint(0,len(filtered_ocean[0])-1)
-        if not check_EM or valid_endmember(filtered_ocean[:,index]):
-            ocean_EM_stack.append(filtered_ocean[:,index])
-        i = i+1
+    while len(ocean_EM_stack) < n and i < 300:
+        index = random.randint(0, len(filtered_ocean[0])-1)
+        if not check_EM or valid_endmember(filtered_ocean[:, index]):
+            ocean_EM_stack.append(filtered_ocean[:, index])
+            filtered_ocean = np.delete(filtered_ocean, index, axis=1)
+        
+        i = i + 1
     if(len(ocean_EM_stack) < 30):
         print("Invalid ocean EM selection")
         return None

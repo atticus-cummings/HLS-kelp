@@ -15,7 +15,7 @@ import requests
 from PIL import Image
 from io import BytesIO
 import csv
-
+from scipy.stats import linregress
 
 
 def view_img(path):
@@ -39,8 +39,27 @@ def view_img(path):
     response = requests.get(img_urls[0])
     img = Image.open(BytesIO(response.content))
     img.show()
+def view_rgb(path, file1, crop_coords=None, title_1='rgb'):
+    files = filter_and_sort_files(path,file1)
+    files = files[0:3]
+    img_1 = []
+    for file in files:
+        with rasterio.open(os.path.join(path,file),'r') as src:
+            img_1.append(src.read(1))
+    print(np.array(img_1).shape)
+    rgb_1 = np.stack([img_1[2], img_1[1], img_1[0]], axis=-1)
+    if crop_coords is not None:
+        start_row, end_row, start_col, end_col = crop_coords
+        rgb_1 = rgb_1[start_row:end_row, start_col:end_col]
+    plt.figure(figsize=(6, 6))#, dpi=100)
+    plt.imshow(rgb_1)
+    plt.title(title_1)
+    plt.show()
 
 
+def extract_granule(filename):
+    granule = filename.split('.tif')[0]
+    return granule
 
 
 
@@ -135,6 +154,14 @@ def load_processed_img(path, file, bands=None, just_data=False, geo_info=False, 
         return_vals.append(clouds)
     return return_vals
 
+def extract_tile_id(filename):
+
+    match = re.search(r'T(\d{2}[A-Z]{3})', filename)
+
+    if match:
+        return match.group(1)
+    else:
+        return None
 
 def plot_image_with_coords(data, transform, crs):
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -387,7 +414,7 @@ def plot_pair_values(df, show_color=False, color_basis='', color_title='', title
     print(f"Mesma: slope = {slope_mesma}, intercept = {intercept_mesma}, R² = {r_value_mesma**2}")
     print(f"Kelp: slope = {slope_kelp}, intercept = {intercept_kelp}, R² = {r_value_kelp**2}")
 
-def view_rgb(path, file1, file2, crop=False,  title_1='rgb1', title_2='rgb2'):
+def view_rgb_double(path, file1, file2, crop=False,  title_1='rgb1', title_2='rgb2'):
     img_1 = load_processed_img(path,file1, bands=[1,2,3,5,6], just_data=True, crop=crop)
     img_2 = load_processed_img(path,file2, bands=[1,2,3,5,6], just_data=True, crop=crop)
     rgb_1 = np.stack([img_1[2], img_1[1], img_1[0]], axis=-1)
@@ -636,39 +663,56 @@ def get_granule(filename):
         print("invalid file name")
         return None
     
-def get_image_pixel_sums(path, file, crop=False, bands=[5,6], kelp_map=None , cloud_correction=False, tide_current=False ):
-    f_data = load_processed_img(path,file, bands=bands, geo_info=False,cloud_coverage=True, tide_current=tide_current, crop=crop, date_return=True)
+def get_image_pixel_sums(path, file, crop_coords=None, crop=False, bands=[5,6], kelp_map=None, cloud_correction=False, tide_current=False):
+    f_data = load_processed_img(path, file, bands=bands, geo_info=False, cloud_coverage=True, tide_current=tide_current, crop=crop, date_return=True)
+    
     if f_data is None:
         return None
-    #print(f_data)
+
+    # Unpack the data
     if tide_current:
         f_img, day_num, date, f_tide, f_current, f_clouds = f_data
-    else: 
+    else:
         f_img, day_num, date, f_clouds = f_data
-    # Process First Image
+
+
+    if crop_coords is not None:
+        start_row, end_row, start_col, end_col = crop_coords
+        f_img = f_img[:, start_row:end_row, start_col:end_col]  # Crop the image bands
+        if kelp_map is not None:
+            kelp_map = kelp_map[start_row:end_row, start_col:end_col]  # Crop the kelp map
+
     f_mesma = np.array(f_img[1])
-    f_mesma = np.where(f_mesma < 5, 0 , f_mesma)
+    f_mesma = np.where(f_mesma < 5, 0, f_mesma)
     f_mesma = np.where(f_mesma > 200, 0, f_mesma)
 
     f_kelp = np.where(f_img[0] == 0, 1, 0)
-    f_kelp = np.where(kelp_map,f_kelp, 0 )
+    
+    if kelp_map is not None:
+        f_kelp = np.where(kelp_map, f_kelp, 0)
+        f_mesma = np.where(kelp_map, f_mesma, 0)
+    
     cloud_correction_factor = None
     if kelp_map is not None:
-        f_mesma = np.where(kelp_map, f_mesma, 0)
-        f_kelp = np.where(kelp_map, f_kelp,0)
-        cloud_over_kelp = np.where(f_img[0] == 2,kelp_map, 0)
+        cloud_over_kelp = np.where(f_img[0] == 2, kelp_map, 0)
         clouds_over_kelp_sum = np.sum(cloud_over_kelp)
         kelp_pixels = np.sum(kelp_map)
-        cloud_correction_factor = kelp_pixels/(kelp_pixels-clouds_over_kelp_sum).astype(float)
+        cloud_correction_factor = kelp_pixels / (kelp_pixels - clouds_over_kelp_sum).astype(float)
+        f_clouds = clouds_over_kelp_sum/kelp_pixels
     f_kelp_pixels = np.sum(f_kelp)
     f_sum = np.sum(f_mesma)
+    
     if cloud_correction and cloud_correction_factor is not None:
         f_sum = f_sum * cloud_correction_factor
+    
+
     if tide_current:    
-        data = [file, day_num, date, f_sum, f_kelp_pixels,f_current,f_tide,f_clouds, cloud_correction_factor]
+        data = [file, day_num, date, f_sum, f_kelp_pixels, f_current, f_tide, f_clouds, cloud_correction_factor]
     else:
-        data = [file, day_num, date, f_sum, f_kelp_pixels,f_clouds, cloud_correction_factor]
+        data = [file, day_num, date, f_sum, f_kelp_pixels, f_clouds, cloud_correction_factor]
+    
     return data
+
 
 def extract_date(filename):
     match = re.search(r'\.(\d{7})T', filename)

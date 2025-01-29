@@ -7,6 +7,7 @@ import csv
 import earthaccess
 import xml.etree.ElementTree as ET
 import csv
+from IPython.display import clear_output
 
 def extract_metadata(granule):
     ## ======= Parse metadata ======= ##
@@ -62,7 +63,7 @@ def get_sorted_files(folder_path, granule_name):
     
     return sorted_files
 
-def create_tiling_reference(data_xml=r'C:\Users\attic\HLS Kelp Detection\maps\S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml', csv_path=r'C:\Users\attic\HLS Kelp Detection\maps'):
+def create_tiling_reference(data_xml=r'D:\HLS Kelp Detection\maps\S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml', csv_path=r'C:\Users\attic\HLS Kelp Detection\maps'):
     tree = ET.parse(data_xml)
     root = tree.getroot()
     namespace = {'kml': 'http://www.opengis.net/kml/2.2'}
@@ -78,7 +79,7 @@ def create_tiling_reference(data_xml=r'C:\Users\attic\HLS Kelp Detection\maps\S2
             lon_lat = [tuple(map(float, coord.split(','))) for coord in coords]
             bounding_boxes[tile_name] = lon_lat
 
-    csv_path = r'C:\Users\attic\HLS Kelp Detection\maps'
+    csv_path = r'D:\HLS Kelp Detection\maps'
     csv_file = os.path.join(csv_path, 'tiling_boxes.csv')
     with open(csv_file, 'w', newline='') as file:
         writer = csv.writer(file)
@@ -88,7 +89,7 @@ def create_tiling_reference(data_xml=r'C:\Users\attic\HLS Kelp Detection\maps\S2
     return csv_file
 
 
-def search_bounding_box(tile_id, csv_file=r'C:\Users\attic\HLS Kelp Detection\maps\tiling_boxes.csv', clip=False):
+def search_bounding_box(tile_id, csv_file=r'D:\HLS Kelp Detection\maps\tiling_boxes.csv', clip=False):
         with open(csv_file, mode='r') as file:
             csv_reader = csv.reader(file)
             coords = None
@@ -112,15 +113,17 @@ def download_dem (tile_id, dem_path):
         short_name="ASTGTM",
         bounding_box=bounding_box)
     for result in dem_results:
-        earthaccess.download(result, local_path=dem_path)
+        earthaccess.download(result, local_path=dem_path, threads=4)
 
-def download_hls_data(temporal=None,tiles=None,bbox=None,data_folder=r'C:\Users\attic\HLS Kelp Detection\imagery\tiles', num_download=500, load_num= -1, cloud_coverage=50, dem_download=False):
+def download_hls_data(temporal=None,tiles=None,bbox=None,data_folder=r'D:\HLS Kelp Detection\imagery\tiles', num_download=500, load_num= -1, cloud_coverage=50, spatial_coverage =25, dem_download=False):
     # for reference, temporal input should be in this form: ("2018-12-25T00:00:00", "2019-01-01T00:00:00")
     #
     bbox_array = []
     if tiles is not None:
         for tile in tiles:
-            bbox_array.append(search_bounding_box(tile))
+            bbox = search_bounding_box(tile)
+
+            bbox_array.append(((bbox[0]+bbox[2])/2 -.05, (bbox[1]+bbox[3])/2 - .05, (bbox[0]+bbox[2])/2 +.05, (bbox[1]+bbox[3])/2 + .05))
     elif bbox is not None:
         bbox_array.append(bbox)
     if not bbox_array:
@@ -137,6 +140,7 @@ def download_hls_data(temporal=None,tiles=None,bbox=None,data_folder=r'C:\Users\
         )
         if results is None:
             continue
+        num_results = len(results)
         for i, granule in enumerate(results):
             metadata = extract_metadata(granule)
             ## ======= Parse metadata ======= ##
@@ -148,6 +152,8 @@ def download_hls_data(temporal=None,tiles=None,bbox=None,data_folder=r'C:\Users\
 
             if(int(metadata['CLOUD_COVERAGE']) > cloud_coverage): #Reject granules with large cloud cover, for now
                 #print(f"Cloud Coverage: {metadata['CLOUD_COVERAGE']}, skipping ")
+                continue
+            if(int(metadata['SPATIAL_COVERAGE']) < spatial_coverage):
                 continue
             #time = metadata['SENSING_TIME']
             tile_id = metadata['MGRS_TILE_ID']
@@ -174,9 +180,14 @@ def download_hls_data(temporal=None,tiles=None,bbox=None,data_folder=r'C:\Users\
             with open(os.devnull, 'w') as f, redirect_stdout(f): #The print out of this is kind of annoying, this redirects *most* of it 
                 downloadPath = earthaccess.download(links, local_path=file_path, threads=16)
             downloaded = downloaded + 1
-            print(f'{name}')
-            if downloaded > num_download:
-                break
+            clear_output()
+            print(f'{name} , downloaded: {downloaded}, total: {i}/{num_results} ')
             ## ======= write metadata csv ======= ##
             save_metadata_csv(metadata,file_path,folder_name)
+
+            
+            if downloaded > num_download:
+                break
+
+
     return True
