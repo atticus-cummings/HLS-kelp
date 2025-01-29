@@ -18,6 +18,8 @@ import csv
 from scipy.stats import linregress
 
 
+home_directory = r'C:\Users\attic\HLS_Kelp' # Change this to your home directory
+
 def view_img(path):
 #granule = 'HLS.L30.T11SKU.2023040T183427.v2.0'
     try:
@@ -648,7 +650,7 @@ def analyze_mesma_pixel(path, file1, file2, bands=[5,6], crop=False, residuals=F
     else:
         return sf_count, s_sum, f_sum, s_count, f_count, s_mesma, f_mesma
 
-def get_mesma_EMs(file='EM_reformatted_dict_v4.pkl', path=r'C:\Users\attic\HLS_Kelp\python_objects'):
+def get_mesma_EMs(file='EM_reformatted_dict_v4.pkl', path=os.path.join(home_directory,r'\python_objects')):
     endmember_path = os.path.join(path,file)
     with open(endmember_path, 'rb') as f:
         endmember_dict = pickle.load(f)
@@ -728,7 +730,7 @@ def sort_filenames_by_date(filenames):
     sorted_filenames = [filename for _, filename in date_filename_pairs]
     return sorted_filenames
 
-def generate_binary_kelp_map(tile, tile_path=r'C:\Users\attic\HLS Kelp Detection\processed imagery\tiles', version=0, save=True, binary_threshold=10, show_image=False):
+def generate_binary_kelp_map(tile, tile_path=os.path.join(home_directory,r'\processed imagery\tiles'), version=0, save=True, binary_threshold=10, show_image=False):
     path= os.path.join(tile_path,tile)
     filenames = set(os.listdir(path))
     filenames.discard('kelp_map.tif')
