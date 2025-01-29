@@ -6,4 +6,4 @@ I'm currently in the process for reformatting and refactoring it such that it ea
 
 In the meantime, feel free to try to replicate/borrow any of the code here. 
 
-I will also be working to upload training data
+I will also soon upload training data so one can easily train their own model.
