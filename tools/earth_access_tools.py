@@ -57,7 +57,7 @@ def get_sorted_files(folder_path, granule_name):
         for band in bands:
             if band in filename:
                 return bands.index(band)
-        return len(bands)  # put other files at the end
+        return len(bands) 
     
     sorted_files = sorted(final_files, key=sort_key)
     
@@ -69,7 +69,6 @@ def create_tiling_reference(data_xml=r'D:\HLS Kelp Detection\maps\S2A_OPER_GIP_T
     namespace = {'kml': 'http://www.opengis.net/kml/2.2'}
 
     bounding_boxes = {}
-    # Iterate through each Placemark
     for placemark in root.findall('.//kml:Placemark', namespace):
         tile_name = placemark.find('kml:name', namespace).text
         
